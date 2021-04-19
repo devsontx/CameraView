@@ -2,10 +2,10 @@ package com.otaliastudios.cameraview.demo
 
 import android.animation.ValueAnimator
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.graphics.*
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -18,18 +18,16 @@ import com.otaliastudios.cameraview.controls.Facing
 import com.otaliastudios.cameraview.controls.Mode
 import com.otaliastudios.cameraview.controls.Preview
 import com.otaliastudios.cameraview.filter.Filters
-import com.otaliastudios.cameraview.frame.Frame
-import com.otaliastudios.cameraview.frame.FrameProcessor
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.*
+
 
 class CameraActivity : AppCompatActivity(), View.OnClickListener, OptionView.Callback {
 
     companion object {
         private val LOG = CameraLogger.create("DemoApp")
-        private const val USE_FRAME_PROCESSOR = false
-        private const val DECODE_BITMAP = false
+        private const val USE_FRAME_PROCESSOR = true
+        private const val DECODE_BITMAP = true
     }
 
     private val camera: CameraView by lazy { findViewById(R.id.camera) }
@@ -45,36 +43,40 @@ class CameraActivity : AppCompatActivity(), View.OnClickListener, OptionView.Cal
         CameraLogger.setLogLevel(CameraLogger.LEVEL_VERBOSE)
         camera.setLifecycleOwner(this)
         camera.addCameraListener(Listener())
-        if (USE_FRAME_PROCESSOR) {
-            camera.addFrameProcessor(object : FrameProcessor {
-                private var lastTime = System.currentTimeMillis()
-                override fun process(frame: Frame) {
-                    val newTime = frame.time
-                    val delay = newTime - lastTime
-                    lastTime = newTime
-                    LOG.v("Frame delayMillis:", delay, "FPS:", 1000 / delay)
-                    if (DECODE_BITMAP) {
-                        if (frame.format == ImageFormat.NV21
-                                && frame.dataClass == ByteArray::class.java) {
-                            val data = frame.getData<ByteArray>()
-                            val yuvImage = YuvImage(data,
-                                    frame.format,
-                                    frame.size.width,
-                                    frame.size.height,
-                                    null)
-                            val jpegStream = ByteArrayOutputStream()
-                            yuvImage.compressToJpeg(Rect(0, 0,
-                                    frame.size.width,
-                                    frame.size.height), 100, jpegStream)
-                            val jpegByteArray = jpegStream.toByteArray()
-                            val bitmap = BitmapFactory.decodeByteArray(jpegByteArray,
-                                    0, jpegByteArray.size)
-                            bitmap.toString()
-                        }
-                    }
-                }
-            })
+        camera.addVideoFrameProcessor { frame, index ->
+            Log.e("CameraActivity", "index: $index -----")
         }
+
+//        if (USE_FRAME_PROCESSOR) {
+//            camera.addFrameProcessor(object : FrameProcessor {
+//                private var lastTime = System.currentTimeMillis()
+//                override fun process(frame: Frame) {
+//                    val newTime = frame.time
+//                    val delay = newTime - lastTime
+//                    lastTime = newTime
+//                    LOG.v("Frame delayMillis:", delay, "FPS:", 1000 / delay)
+//                    if (DECODE_BITMAP) {
+//                        if (frame.format == ImageFormat.NV21
+//                                && frame.dataClass == ByteArray::class.java) {
+//                            val data = frame.getData<ByteArray>()
+//                            val yuvImage = YuvImage(data,
+//                                    frame.format,
+//                                    frame.size.width,
+//                                    frame.size.height,
+//                                    null)
+//                            val jpegStream = ByteArrayOutputStream()
+//                            yuvImage.compressToJpeg(Rect(0, 0,
+//                                    frame.size.width,
+//                                    frame.size.height), 100, jpegStream)
+//                            val jpegByteArray = jpegStream.toByteArray()
+//                            val bitmap = BitmapFactory.decodeByteArray(jpegByteArray,
+//                                    0, jpegByteArray.size)
+//                            bitmap.toString()
+//                        }
+//                    }
+//                }
+//            })
+//        }
         findViewById<View>(R.id.edit).setOnClickListener(this)
         findViewById<View>(R.id.capturePicture).setOnClickListener(this)
         findViewById<View>(R.id.capturePictureSnapshot).setOnClickListener(this)
@@ -260,9 +262,9 @@ class CameraActivity : AppCompatActivity(), View.OnClickListener, OptionView.Cal
 
     private fun capturePictureSnapshot() {
         if (camera.isTakingPicture) return
-        if (camera.preview != Preview.GL_SURFACE) return run {
-            message("Picture snapshots are only allowed with the GL_SURFACE preview.", true)
-        }
+//        if (camera.preview != Option.Preview.GL_SURFACE) return run {
+//            message("Picture snapshots are only allowed with the GL_SURFACE preview.", true)
+//        }
         captureTime = System.currentTimeMillis()
         message("Capturing picture snapshot...", false)
         camera.takePictureSnapshot()
@@ -274,7 +276,7 @@ class CameraActivity : AppCompatActivity(), View.OnClickListener, OptionView.Cal
         }
         if (camera.isTakingPicture || camera.isTakingVideo) return
         message("Recording for 5 seconds...", true)
-        camera.takeVideo(File(filesDir, "video.mp4"), 5000)
+        camera.takeVideo(File(filesDir, "video.mp4"), 10000)
     }
 
     private fun captureVideoSnapshot() {
@@ -285,7 +287,7 @@ class CameraActivity : AppCompatActivity(), View.OnClickListener, OptionView.Cal
             message("Video snapshots are only allowed with the GL_SURFACE preview.", true)
         }
         message("Recording snapshot for 5 seconds...", true)
-        camera.takeVideoSnapshot(File(filesDir, "video.mp4"), 5000)
+        camera.takeVideoSnapshot(File(filesDir, "video.mp4"), 10000)
     }
 
     private fun toggleCamera() {

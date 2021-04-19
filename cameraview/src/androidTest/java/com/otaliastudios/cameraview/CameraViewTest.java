@@ -33,6 +33,7 @@ import com.otaliastudios.cameraview.filter.Filters;
 import com.otaliastudios.cameraview.filters.DuotoneFilter;
 import com.otaliastudios.cameraview.frame.Frame;
 import com.otaliastudios.cameraview.frame.FrameProcessor;
+import com.otaliastudios.cameraview.frame.VideoFrameProcessor;
 import com.otaliastudios.cameraview.gesture.Gesture;
 import com.otaliastudios.cameraview.gesture.GestureAction;
 import com.otaliastudios.cameraview.controls.Grid;
@@ -902,6 +903,27 @@ public class CameraViewTest extends BaseTest {
         cameraView.setFrameProcessingExecutors(0);
     }
 
+    @Test
+    public void testVideoFrameProcessingPoolSize() {
+        cameraView.setVideoFrameProcessingPoolSize(4);
+        assertEquals(4, cameraView.getVideoFrameProcessingPoolSize());
+        cameraView.setVideoFrameProcessingPoolSize(6);
+        assertEquals(6, cameraView.getVideoFrameProcessingPoolSize());
+    }
+
+    @Test
+    public void testVideoFrameProcessingExecutors() {
+        cameraView.setVideoFrameProcessingExecutors(5);
+        assertEquals(5, cameraView.getVideoFrameProcessingExecutors());
+        cameraView.setVideoFrameProcessingExecutors(2);
+        assertEquals(2, cameraView.getVideoFrameProcessingExecutors());
+    }
+
+    @Test(expected = RuntimeException.class)
+    public void testVideoFrameProcessingExecutors_throws() {
+        cameraView.setVideoFrameProcessingExecutors(0);
+    }
+
     //endregion
 
     //region Lists of listeners and processors
@@ -959,6 +981,35 @@ public class CameraViewTest extends BaseTest {
         cameraView.addFrameProcessor(new FrameProcessor() { public void process(@NonNull Frame f) {} });
         for (FrameProcessor test : cameraView.mFrameProcessors) {
             cameraView.mFrameProcessors.remove(test);
+        }
+    }
+
+    @Test
+    public void testVideoFrameProcessorsList() {
+        assertTrue(cameraView.mVideoFrameProcessors.isEmpty());
+
+        VideoFrameProcessor processor = new VideoFrameProcessor() {
+            public void process(@NonNull Frame frame, int frameIndex) {}
+        };
+        cameraView.addVideoFrameProcessor(processor);
+        assertEquals(cameraView.mVideoFrameProcessors.size(), 1);
+
+        cameraView.removeVideoFrameProcessor(processor);
+        assertEquals(cameraView.mVideoFrameProcessors.size(), 0);
+
+        cameraView.addVideoFrameProcessor(processor);
+        cameraView.addVideoFrameProcessor(processor);
+        assertEquals(cameraView.mVideoFrameProcessors.size(), 2);
+
+        cameraView.clearVideoFrameProcessors();
+        assertTrue(cameraView.mVideoFrameProcessors.isEmpty());
+
+        // Ensure this does not throw a ConcurrentModificationException
+        cameraView.addVideoFrameProcessor(new VideoFrameProcessor() { public void process(@NonNull Frame f, int frameIndex) {} });
+        cameraView.addVideoFrameProcessor(new VideoFrameProcessor() { public void process(@NonNull Frame f, int frameIndex) {} });
+        cameraView.addVideoFrameProcessor(new VideoFrameProcessor() { public void process(@NonNull Frame f, int frameIndex) {} });
+        for (VideoFrameProcessor test : cameraView.mVideoFrameProcessors) {
+            cameraView.mVideoFrameProcessors.remove(test);
         }
     }
 

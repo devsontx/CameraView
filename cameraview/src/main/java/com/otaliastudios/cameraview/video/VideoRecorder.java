@@ -1,12 +1,14 @@
 package com.otaliastudios.cameraview.video;
 
-import com.otaliastudios.cameraview.CameraLogger;
-import com.otaliastudios.cameraview.VideoResult;
+import android.graphics.Bitmap;
 
 import androidx.annotation.CallSuper;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+
+import com.otaliastudios.cameraview.CameraLogger;
+import com.otaliastudios.cameraview.VideoResult;
 
 /**
  * Interface for video recording.
@@ -24,7 +26,8 @@ public abstract class VideoRecorder {
 
         /**
          * The operation was completed, either with success or with an error.
-         * @param result the result or null if error
+         *
+         * @param result    the result or null if error
          * @param exception the error or null if everything went fine
          */
         void onVideoResult(@Nullable VideoResult.Stub result, @Nullable Exception exception);
@@ -39,13 +42,16 @@ public abstract class VideoRecorder {
          * and soon {@link #onVideoResult(VideoResult.Stub, Exception)} will be called.
          */
         void onVideoRecordingEnd();
+
+        void onFrameDrew(Bitmap frameData, int frameIndex);
     }
 
     private final static int STATE_IDLE = 0;
     private final static int STATE_RECORDING = 1;
     private final static int STATE_STOPPING = 2;
 
-    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED) VideoResult.Stub mResult;
+    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
+    VideoResult.Stub mResult;
     private final VideoResultListener mListener;
     @SuppressWarnings("WeakerAccess")
     protected Exception mError;
@@ -54,6 +60,7 @@ public abstract class VideoRecorder {
 
     /**
      * Creates a new video recorder.
+     *
      * @param listener a listener
      */
     VideoRecorder(@Nullable VideoResultListener listener) {
@@ -82,6 +89,7 @@ public abstract class VideoRecorder {
 
     /**
      * Stops recording.
+     *
      * @param isCameraShutdown whether this is a full shutdown, camera is being closed
      */
     public final void stop(boolean isCameraShutdown) {
@@ -100,6 +108,7 @@ public abstract class VideoRecorder {
 
     /**
      * Returns true if it is currently recording.
+     *
      * @return true if recording
      */
     public boolean isRecording() {
@@ -171,6 +180,15 @@ public abstract class VideoRecorder {
         LOG.i("dispatchVideoRecordingEnd:", "About to dispatch.");
         if (mListener != null) {
             mListener.onVideoRecordingEnd();
+        }
+    }
+
+    @SuppressWarnings("WeakerAccess")
+    @CallSuper
+    protected void dispatchFrameDrew(Bitmap frameData, int frameIndex) {
+        LOG.i("dispatchFrameDrew:", "On frame drew.");
+        if (mListener != null) {
+            mListener.onFrameDrew(frameData, frameIndex);
         }
     }
 }

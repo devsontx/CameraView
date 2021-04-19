@@ -16,12 +16,12 @@
         android:layout_marginBottom="88dp"
         android:keepScreenOn="true"
         app:cameraExperimental="true"
-        app:cameraEngine="camera2"
+        app:cameraEngine="camera1"
         app:cameraPreview="glSurface"
         app:cameraPlaySounds="true"
         app:cameraGrid="off"
         app:cameraFlash="auto"
-        app:cameraAudio="on"
+        app:cameraAudio="off"
         app:cameraFacing="back"
         app:cameraGestureTap="autoFocus"
         app:cameraGestureLongTap="none"
@@ -71,6 +71,12 @@
     </LinearLayout>
 
     <!-- Controls -->
+    <androidx.appcompat.widget.AppCompatImageView
+        android:id="@+id/testImage"
+        android:layout_width="50dp"
+        android:layout_gravity="bottom"
+        android:layout_height="50dp"/>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

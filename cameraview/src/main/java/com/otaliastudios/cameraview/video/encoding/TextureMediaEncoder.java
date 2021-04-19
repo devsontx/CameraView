@@ -1,8 +1,11 @@
 package com.otaliastudios.cameraview.video.encoding;
 
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
+import android.opengl.GLES20;
 import android.opengl.Matrix;
 import android.os.Build;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -13,7 +16,11 @@ import com.otaliastudios.cameraview.filter.Filter;
 import com.otaliastudios.cameraview.internal.GlTextureDrawer;
 import com.otaliastudios.cameraview.internal.Pool;
 import com.otaliastudios.opengl.core.EglCore;
+import com.otaliastudios.opengl.core.Egloo;
 import com.otaliastudios.opengl.surface.EglWindowSurface;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 /**
  * Default implementation for video encoding.
@@ -23,6 +30,7 @@ public class TextureMediaEncoder extends VideoMediaEncoder<TextureConfig> {
 
     private static final String TAG = TextureMediaEncoder.class.getSimpleName();
     private static final CameraLogger LOG = CameraLogger.create(TAG);
+    private static final boolean PERFORMANCE_DEBUG = false;
 
     public final static String FRAME_EVENT = "frame";
     public final static String FILTER_EVENT = "filter";
@@ -39,9 +47,16 @@ public class TextureMediaEncoder extends VideoMediaEncoder<TextureConfig> {
     });
 
     private long mFirstTimeUs = Long.MIN_VALUE;
+    private int mDrewFrameNumber = -1;
+    private OnFrameDrew onFrameDrewListener;
+    private long performanceDebugTime;
 
     public TextureMediaEncoder(@NonNull TextureConfig config) {
         super(config.copy());
+    }
+
+    public void setOnFrameDrewListener(@Nullable OnFrameDrew onFrameDrewListener) {
+        this.onFrameDrewListener = onFrameDrewListener;
     }
 
     /**
@@ -49,7 +64,8 @@ public class TextureMediaEncoder extends VideoMediaEncoder<TextureConfig> {
      * to {@link MediaEncoderEngine#notify(String, Object)} with {@link #FRAME_EVENT}.
      */
     public static class Frame {
-        private Frame() {}
+        private Frame() {
+        }
 
         /**
          * Nanoseconds, in no meaningful time-base. Will be used for offsets only.
@@ -75,6 +91,7 @@ public class TextureMediaEncoder extends VideoMediaEncoder<TextureConfig> {
 
     /**
      * Returns a new frame to be filled. See {@link Frame} for details.
+     *
      * @return a new frame
      */
     @NonNull
@@ -106,10 +123,10 @@ public class TextureMediaEncoder extends VideoMediaEncoder<TextureConfig> {
      * Any number of pending events greater than 1 means that we should skip this frame.
      * To avoid skipping too many frames, we'll use 2 for now, but this just means
      * that we'll be drawing the same frame twice.
-     *
+     * <p>
      * When an event is posted, the textureId data has already been updated so we're
      * too late to draw the old one and it should be skipped.
-     *
+     * <p>
      * This is especially important if we perform overlay drawing here, since that
      * makes this class thread busy and slows down the event dispatching.
      *
@@ -237,12 +254,68 @@ public class TextureMediaEncoder extends VideoMediaEncoder<TextureConfig> {
         mWindow.setPresentationTime(frame.timestampNanos);
         mWindow.swapBuffers();
         mFramePool.recycle(frame);
+
+        mDrewFrameNumber++;
+        LOG.i("#onFrame", "drewFrameNumber: " + mDrewFrameNumber);
+
         LOG.i("onEvent -",
                 "frameNumber:", mFrameNumber,
                 "timestampUs:", frame.timestampUs(),
                 "hasReachedMaxLength:", hasReachedMaxLength(),
                 "thread:", Thread.currentThread(),
                 "- gl rendered.");
+
+        Bitmap bitmap = toBitmap(mWindow);
+        if (onFrameDrewListener != null && bitmap != null) {
+            onFrameDrewListener.onDrew(bitmap, mDrewFrameNumber);
+        }
+    }
+
+    /**
+     * Saves the EGL surface to the a ByteBuffer
+     * Expects that this object's EGL surface is current.
+     *
+     * @return
+     */
+    public Bitmap toBitmap(EglWindowSurface eglWindowSurface) {
+        if (!eglWindowSurface.isCurrent()) {
+            LOG.e("Expected EGL context/surface is not current");
+            return null;
+        }
+
+        if (PERFORMANCE_DEBUG) {
+            performanceDebugTime = System.currentTimeMillis();
+            LOG.i(TAG, "#toBitmap start at " + performanceDebugTime);
+        }
+        // glReadPixels fills in a "direct" ByteBuffer with what is essentially big-endian RGBA
+        // data (i.e. a byte of red, followed by a byte of green...).  While the Bitmap
+        // constructor that takes an int[] wants little-endian ARGB (blue/red swapped), the
+        // Bitmap "copy pixels" method wants the same format GL provides.
+        //
+        // Making this even more interesting is the upside-down nature of GL, which means
+        // our output will look upside down relative to what appears on screen if the
+        // typical GL conventions are used.
+        int width = eglWindowSurface.getWidth();
+        int height = eglWindowSurface.getHeight();
+        ByteBuffer buf = ByteBuffer.allocateDirect(width * height * 4);
+        buf.order(ByteOrder.LITTLE_ENDIAN);
+        GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buf);
+        Egloo.checkGlError("glReadPixels");
+        buf.rewind();
+
+        if (PERFORMANCE_DEBUG) {
+            LOG.i(TAG, "#toBitmap glReadPixels " + (System.currentTimeMillis() - performanceDebugTime));
+            performanceDebugTime = System.currentTimeMillis();
+        }
+
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        bitmap.copyPixelsFromBuffer(buf);
+
+        if (PERFORMANCE_DEBUG) {
+            LOG.i(TAG, "#toBitmap create bitmap " + (System.currentTimeMillis() - performanceDebugTime));
+        }
+
+        return bitmap;
     }
 
     @Override

@@ -30,7 +30,8 @@
         <attr name="cameraFrameProcessingFormat" format="integer|reference" />
         <attr name="cameraFrameProcessingPoolSize" format="integer|reference" />
         <attr name="cameraFrameProcessingExecutors" format="integer|reference" />
-
+        <attr name="cameraVideoFrameProcessingPoolSize" format="integer|reference" />
+        <attr name="cameraVideoFrameProcessingExecutors" format="integer|reference" />
         <attr name="cameraVideoBitRate" format="integer|reference" />
         <attr name="cameraAudioBitRate" format="integer|reference" />
         <attr name="cameraPreviewFrameRate" format="integer|reference" />

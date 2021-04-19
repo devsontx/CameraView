@@ -59,6 +59,7 @@ import com.otaliastudios.cameraview.filter.OneParameterFilter;
 import com.otaliastudios.cameraview.filter.TwoParameterFilter;
 import com.otaliastudios.cameraview.frame.Frame;
 import com.otaliastudios.cameraview.frame.FrameProcessor;
+import com.otaliastudios.cameraview.frame.VideoFrameProcessor;
 import com.otaliastudios.cameraview.gesture.Gesture;
 import com.otaliastudios.cameraview.gesture.GestureAction;
 import com.otaliastudios.cameraview.gesture.GestureFinder;
@@ -123,6 +124,8 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     final static boolean DEFAULT_REQUEST_PERMISSIONS = true;
     final static int DEFAULT_FRAME_PROCESSING_POOL_SIZE = 2;
     final static int DEFAULT_FRAME_PROCESSING_EXECUTORS = 1;
+    final static int DEFAULT_VIDEO_FRAME_PROCESSING_POOL_SIZE = 2;
+    final static int DEFAULT_VIDEO_FRAME_PROCESSING_EXECUTORS = 1;
 
     // Self managed parameters
     private boolean mPlaySounds;
@@ -133,10 +136,12 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     private Engine mEngine;
     private Filter mPendingFilter;
     private int mFrameProcessingExecutors;
+    private int mVideoFrameProcessingExecutors;
 
     // Components
     private Handler mUiHandler;
     private Executor mFrameProcessingExecutor;
+    private Executor mVideoFrameProcessingExecutor;
     @VisibleForTesting CameraCallbacks mCameraCallbacks;
     private CameraPreview mCameraPreview;
     private OrientationHelper mOrientationHelper;
@@ -146,6 +151,7 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     private AutoFocusMarker mAutoFocusMarker;
     @VisibleForTesting List<CameraListener> mListeners = new CopyOnWriteArrayList<>();
     @VisibleForTesting List<FrameProcessor> mFrameProcessors = new CopyOnWriteArrayList<>();
+    @VisibleForTesting List<VideoFrameProcessor> mVideoFrameProcessors = new CopyOnWriteArrayList<>();
     private Lifecycle mLifecycle;
 
     // Gestures
@@ -225,6 +231,10 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
                 DEFAULT_FRAME_PROCESSING_POOL_SIZE);
         int frameExecutors = a.getInteger(R.styleable.CameraView_cameraFrameProcessingExecutors,
                 DEFAULT_FRAME_PROCESSING_EXECUTORS);
+        int videoFramePoolSize = a.getInteger(R.styleable.CameraView_cameraVideoFrameProcessingPoolSize,
+                DEFAULT_VIDEO_FRAME_PROCESSING_POOL_SIZE);
+        int videoFrameExecutors = a.getInteger(R.styleable.CameraView_cameraVideoFrameProcessingExecutors,
+                DEFAULT_VIDEO_FRAME_PROCESSING_EXECUTORS);
 
         // Size selectors and gestures
         SizeSelectorParser sizeSelectors = new SizeSelectorParser(a);
@@ -289,6 +299,8 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
         setFrameProcessingFormat(frameFormat);
         setFrameProcessingPoolSize(framePoolSize);
         setFrameProcessingExecutors(frameExecutors);
+        setVideoFrameProcessingPoolSize(videoFramePoolSize);
+        setVideoFrameProcessingExecutors(videoFrameExecutors);
 
         // Apply gestures
         mapGesture(Gesture.TAP, gestures.getTapAction());
@@ -868,6 +880,7 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
         if (mInEditor) return;
         clearCameraListeners();
         clearFrameProcessors();
+        clearVideoFrameProcessors();
         mCameraEngine.destroy(true);
         if (mCameraPreview != null) mCameraPreview.onDestroy();
     }
@@ -2397,6 +2410,35 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
         }
 
         @Override
+        public void dispatchVideoFrame(@NonNull final Frame frame, final int frameIndex) {
+            // The getTime() below might crash if developers incorrectly release
+            // frames asynchronously.
+            LOG.v("dispatchFrame:", frame.getTime(), "processors:", mVideoFrameProcessors.size());
+            if (mVideoFrameProcessors.isEmpty()) {
+                // Mark as released. This instance will be reused.
+                frame.release();
+            } else {
+                // Dispatch this frame to frame processors.
+                mVideoFrameProcessingExecutor.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        LOG.v("dispatchFrame: executing. Passing", frame.getTime(),
+                                "to processors.");
+
+                        for (VideoFrameProcessor processor : mVideoFrameProcessors) {
+                            try {
+                                processor.process(frame, frameIndex);
+                            } catch (Exception e) {
+                                LOG.w("Frame processor crashed:", e);
+                            }
+                        }
+                        frame.release();
+                    }
+                });
+            }
+        }
+
+        @Override
         public void dispatchError(final CameraException exception) {
             LOG.i("dispatchError", exception);
             mUiHandler.post(new Runnable() {
@@ -2456,6 +2498,21 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     }
 
     /**
+     * Adds a {@link VideoFrameProcessor} instance to be notified of
+     * new frames in the preview stream.
+     *
+     * @param processor a frame processor.
+     */
+    public void addVideoFrameProcessor(@Nullable VideoFrameProcessor processor) {
+        if (processor != null) {
+            mVideoFrameProcessors.add(processor);
+            if (mVideoFrameProcessors.size() == 1) {
+                mCameraEngine.setHasVideoFrameProcessors(true);
+            }
+        }
+    }
+
+    /**
      * Remove a {@link FrameProcessor} that was previously registered.
      *
      * @param processor a frame processor
@@ -2470,6 +2527,20 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     }
 
     /**
+     * Remove a {@link FrameProcessor} that was previously registered.
+     *
+     * @param processor a frame processor
+     */
+    public void removeVideoFrameProcessor(@Nullable VideoFrameProcessor processor) {
+        if (processor != null) {
+            mVideoFrameProcessors.remove(processor);
+            if (mVideoFrameProcessors.size() == 0) {
+                mCameraEngine.setHasVideoFrameProcessors(false);
+            }
+        }
+    }
+
+    /**
      * Clears the list of {@link FrameProcessor} that have been registered
      * to preview frames.
      */
@@ -2478,6 +2549,18 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
         mFrameProcessors.clear();
         if (had) {
             mCameraEngine.setHasFrameProcessors(false);
+        }
+    }
+
+    /**
+     * Clears the list of {@link VideoFrameProcessor} that have been registered
+     * to preview frames.
+     */
+    public void clearVideoFrameProcessors() {
+        boolean had = mVideoFrameProcessors.size() > 0;
+        mVideoFrameProcessors.clear();
+        if (had) {
+            mCameraEngine.setHasVideoFrameProcessors(false);
         }
     }
 
@@ -2567,6 +2650,32 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     }
 
     /**
+     * Sets the frame processing pool size. This is (roughly) the max number of
+     * {@link Frame} instances that can exist at a given moment in the frame pipeline,
+     * excluding frozen frames.
+     *
+     * Defaults to 2 - higher values will increase the memory usage with little benefit.
+     * Can be higher than 2 if {@link #setFrameProcessingExecutors(int)} is used.
+     * These values should be tuned together. We recommend setting a pool size that's equal to
+     * the number of executors plus 1, so that there's always a free Frame for the camera engine.
+     *
+     * Changing this value after camera initialization will have no effect.
+     * @param poolSize pool size
+     */
+    public void setVideoFrameProcessingPoolSize(int poolSize) {
+        mCameraEngine.setVideoFrameProcessingPoolSize(poolSize);
+    }
+
+    /**
+     * Returns the current frame processing pool size.
+     * @see #setFrameProcessingPoolSize(int)
+     * @return pool size
+     */
+    public int getVideoFrameProcessingPoolSize() {
+        return mCameraEngine.getVideoFrameProcessingPoolSize();
+    }
+
+    /**
      * Sets the thread pool size for frame processing. This means that if the processing rate
      * is slower than the preview rate, you can set this value to something bigger than 1
      * to avoid losing frames.
@@ -2601,6 +2710,40 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     }
 
     /**
+     * Sets the thread pool size for frame processing. This means that if the processing rate
+     * is slower than the preview rate, you can set this value to something bigger than 1
+     * to avoid losing frames.
+     * Defaults to 1 and this should be OK for most applications.
+     *
+     * Should be tuned depending on the task, the processor implementation, and along with
+     * {@link #setFrameProcessingPoolSize(int)}. We recommend choosing a pool size that is
+     * equal to the executors plus 1.
+     * @param executors thread count
+     */
+    public void setVideoFrameProcessingExecutors(int executors) {
+        if (executors < 1) {
+            throw new IllegalArgumentException("Need at least 1 executor, got " + executors);
+        }
+        mVideoFrameProcessingExecutors = executors;
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                executors,
+                executors,
+                4,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<Runnable>(),
+                new ThreadFactory() {
+                    private final AtomicInteger mCount = new AtomicInteger(1);
+                    @Override
+                    public Thread newThread(@NonNull Runnable r) {
+                        return new Thread(r, "FrameExecutor #" + mCount.getAndIncrement());
+                    }
+                }
+        );
+        executor.allowCoreThreadTimeOut(true);
+        mVideoFrameProcessingExecutor = executor;
+    }
+
+    /**
      * Returns the current executors count.
      * @see #setFrameProcessingExecutors(int)
      * @return thread count
@@ -2608,6 +2751,16 @@ public class CameraView extends FrameLayout implements LifecycleObserver {
     public int getFrameProcessingExecutors() {
         return mFrameProcessingExecutors;
     }
+
+    /**
+     * Returns the current executors count.
+     * @see #setVideoFrameProcessingExecutors(int)
+     * @return thread count
+     */
+    public int getVideoFrameProcessingExecutors() {
+        return mVideoFrameProcessingExecutors;
+    }
+
 
     //endregion
 

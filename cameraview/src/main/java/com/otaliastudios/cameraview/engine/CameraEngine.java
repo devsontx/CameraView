@@ -125,6 +125,7 @@ public abstract class CameraEngine implements
         void dispatchOnExposureCorrectionChanged(float newValue, @NonNull float[] bounds,
                                                  @Nullable PointF[] fingers);
         void dispatchFrame(@NonNull Frame frame);
+        void dispatchVideoFrame(@NonNull Frame frame, int frameIndex);
         void dispatchError(CameraException exception);
         void dispatchOnVideoRecordingStart();
         void dispatchOnVideoRecordingEnd();
@@ -589,6 +590,9 @@ public abstract class CameraEngine implements
     @NonNull
     public abstract FrameManager getFrameManager();
 
+    @NonNull
+    public abstract FrameManager getVideoFrameManager();
+
     @Nullable
     public abstract CameraOptions getCameraOptions();
 
@@ -659,6 +663,9 @@ public abstract class CameraEngine implements
     public abstract void setFrameProcessingPoolSize(int poolSize);
     public abstract int getFrameProcessingPoolSize();
 
+    public abstract void setVideoFrameProcessingPoolSize(int poolSize);
+    public abstract int getVideoFrameProcessingPoolSize();
+
     public abstract void setAutoFocusResetDelay(long delayMillis);
     public abstract long getAutoFocusResetDelay();
 
@@ -700,6 +707,9 @@ public abstract class CameraEngine implements
 
     public abstract void setHasFrameProcessors(boolean hasFrameProcessors);
     public abstract boolean hasFrameProcessors();
+
+    public abstract void setHasVideoFrameProcessors(boolean hasVideoFrameProcessors);
+    public abstract boolean hasVideoFrameProcessors();
 
     public abstract void setPictureMetering(boolean enable);
     public abstract boolean getPictureMetering();

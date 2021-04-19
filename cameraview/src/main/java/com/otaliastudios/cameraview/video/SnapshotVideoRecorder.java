@@ -1,13 +1,11 @@
 package com.otaliastudios.cameraview.video;
 
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
-import android.media.MediaFormat;
-import android.media.MediaRecorder;
 import android.opengl.EGL14;
 import android.os.Build;
 
 import com.otaliastudios.cameraview.CameraLogger;
-import com.otaliastudios.cameraview.controls.AudioCodec;
 import com.otaliastudios.cameraview.internal.DeviceEncoders;
 import com.otaliastudios.cameraview.overlay.Overlay;
 import com.otaliastudios.cameraview.VideoResult;
@@ -23,6 +21,7 @@ import com.otaliastudios.cameraview.video.encoding.AudioConfig;
 import com.otaliastudios.cameraview.video.encoding.AudioMediaEncoder;
 import com.otaliastudios.cameraview.video.encoding.EncoderThread;
 import com.otaliastudios.cameraview.video.encoding.MediaEncoderEngine;
+import com.otaliastudios.cameraview.video.encoding.OnFrameDrew;
 import com.otaliastudios.cameraview.video.encoding.TextureConfig;
 import com.otaliastudios.cameraview.video.encoding.TextureMediaEncoder;
 
@@ -242,6 +241,12 @@ public class SnapshotVideoRecorder extends VideoRecorder implements RendererFram
                 // ^ no "rotation" here! Overlays are already in VIEW ref.
             }
             TextureMediaEncoder videoEncoder = new TextureMediaEncoder(videoConfig);
+            videoEncoder.setOnFrameDrewListener(new OnFrameDrew() {
+                @Override
+                public void onDrew(Bitmap frameData, int index) {
+                    dispatchFrameDrew(frameData, index);
+                }
+            });
 
             // Adjustment
             mResult.rotation = 0; // We will rotate the result instead.
